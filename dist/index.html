@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>bus,bus</title>
+    <script>function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+function Bus(options) {
+  this._init(options);
+
+  return;
+}
+
+Bus.prototype._init = function (ops) {
+  this.$options = ops;
+  initstate(this);
+};
+
+function initstate(vm) {
+  var opts = vm.$options;
+
+  if (opts.data) {
+    initdata(vm);
+  }
+
+  if (opts.computed) {
+    initcomputed();
+  }
+
+  if (opts.watch) {
+    initwatch();
+  }
+}
+
+function initdata(vm) {
+  var data = vm.$options.data;
+
+  if (typeof data == 'function') {
+    //data里面的this指向vm实例 this.xxx=xx
+    vm._data = data.call(vm);
+  } else {
+    vm._data = data || {};
+  }
+
+  for (var k in vm._data) {
+    proxy(vm, '_data', k);
+  }
+
+  observe(vm._data);
+}
+
+function proxy(vm, source, k) {
+  Object.defineProperty(vm, k, {
+    set: function set(newv) {
+      return vm[source][k] = newv;
+    },
+    get: function get() {
+      return vm[source][k];
+    }
+  });
+}
+
+function observe(data) {
+  if (_typeof(data) == 'object') {
+    observer(data);
+  } else {
+    return;
+  }
+}
+
+function observer(data) {
+  var keys = Object.keys(data);
+
+  if (Array.isArray(data)) {
+    data.__proto__ = arrayMethods;
+    observearray(data);
+  }
+
+  keys.forEach(function (v) {
+    reactive(data, v, data[v]);
+  });
+}
+
+function reactive(d, k, v) {
+  observe(v); //Object.defineProperty(倾听的数据，倾听的键，配置{get,set})
+
+  Object.defineProperty(d, k, {
+    get: function get() {
+      return v;
+    },
+    set: function set(newv) {
+      if (newv === v) {
+        return;
+      }
+
+      observe(newv);
+      return v = newv;
+    }
+  });
+}
+
+function initwatch() {}
+
+function initcomputed() {}
+
+function observearray(args) {
+  args.forEach(function (v) {
+    observe(v);
+  });
+} //数组拦截
+
+
+var oldMethods = Array.prototype;
+var arrayMethods = Object.create(oldMethods);
+var methods = ['pop', 'push', 'shift', 'unshift', 'sort', 'splice', 'reverse'];
+methods.forEach(function (method) {
+  arrayMethods[method] = function () {
+    for (var _len = arguments.length, args = new Array(_len), _key = 0; _key < _len; _key++) {
+      args[_key] = arguments[_key];
+    }
+
+    if (args.length > 0) {
+      observearray(args);
+    }
+
+    return oldMethods[method].apply(this, args);
+  };
+});
+var app = new Bus({
+  ele: '#app',
+  data: function data() {
+    return {
+      info: {
+        name: '',
+        age: 0,
+        pet: ['dog', 'cat', 'tager']
+      }
+    };
+  },
+  watch: {},
+  computed: {}
+});
+app._data.info.name = '--';
+console.log(app);</script>
+</head>
+<body>
+    <div id="app"></div>
+</body>
+</html>
