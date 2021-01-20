@@ -1,141 +1,261 @@
 <!DOCTYPE html>
 <html lang="cn">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>bus,bus</title>
-    <script>
-function Bus(options){
-this._init(options)    
-return 
-}
-Bus.prototype._init=function (ops){ 
-    this.$options=ops
-    initstate(this)
-}
-
-function initstate(vm){
-    let opts=vm.$options
-    if(opts.data){
-        initdata(vm)
-    }
-    if(opts.computed){
-        initcomputed()
-    }
-    if (opts.watch){
-        initwatch()
-    }
-}
-function initdata(vm){
-    let data = vm.$options.data
-    if(typeof data == 'function'){
-        //data里面的this指向vm实例 this.xxx=xx
-        vm._data=data.call(vm)
-    }else{
-        vm._data=data || {}
-    }
-    for(let k in vm._data){
-        proxy(vm,'_data',k)
-    }
-    observe(vm._data)
-}
-
-function proxy(vm,source,k){
-    Object.defineProperty(vm,k,{
-        set(newv){
-            return vm[source][k]=newv
-        },
-        get(){
-            return vm[source][k]          
-        }
-    })
-}
-
-function observe(data){
-    if(typeof data == 'object'){
-        observer(data)
-    }
-    else{
-        return 
-    }
-}
-function observer(data){
-    let keys = Object.keys(data)
-    if(Array.isArray(data)){
-        data.__proto__=arrayMethods
-        observearray(data)
-    }
-    keys.forEach(function (v) {
-      reactive(data, v, data[v]);
-    })
-}
-
-function reactive(d,k,v){
-    observe(v)
-    //Object.defineProperty(倾听的数据，倾听的键，配置{get,set})
-    Object.defineProperty(d,k,{
-        get(){
-            return v
-        },
-        set(newv){
-            if(newv === v ){
-                return 
-            }
-            observe(newv)
-            return v=newv
-        }
-    })
-}
-
-function initwatch(){
-
-}
-function initcomputed(){
-
-}
-
-function observearray(args) {
-  args.forEach(function (v) {
-    observe(v)
-  })
-} //数组拦截
-
-var oldMethods=Array.prototype
-var arrayMethods = Object.create(oldMethods)
-var methods = ['pop', 'push', 'shift', 'unshift', 'sort', 'splice', 'reverse'];
-methods.forEach(function (method) {
-  arrayMethods[method] = function (...args) {
-    if (args.length > 0) {
-      observearray(args)
-    }
-    return oldMethods[method].apply(this, args)
-  }
-})
-
-
-    let app=new Bus({
-    ele:'#app',
-    data(){
-        return {
-            info:{
-                name:'',
-                age:0,
-                pet:['dog','cat','tager']
-            }
-        }
-    },
-    watch:{
-
-    },
-    computed:{
-
-    }
-    })
-    app._data.info.name='--'
-    console.log(app);
-    </script>
+    <title>Vue,Vue</title>
 </head>
+
 <body>
-    <div id="app"></div>
+    <div id="app">
+        <span>{{info.name}}</span>
+        <span>{{info.age}}</span>
+        <span>{{info.name}}</span>
+        <span>{{info.name}}</span>
+        <span>{{info.name}}</span>
+    </div>
+    <script>
+        function Vue(options) {
+            this._init(options)
+            return
+        }
+        Vue.prototype._init = function(ops) {
+            this.$options = ops
+            initstate(this)
+            if (ops.ele) {
+                this.$mount(ops)
+            }
+        }
+
+        function query(el) {
+            if (typeof el == 'string') {
+                return document.querySelector(el)
+            } else {
+                return {}
+            }
+        }
+
+        Vue.prototype.$mount = function(ops) {
+            let vm = this
+            this.$el = query(ops.ele);
+            new Watcher(function() {
+                vm._update()
+            })
+        }
+        Vue.prototype._update = function() {
+            let node = document.createDocumentFragment()
+            let firstChild;
+            let ele = this.$el
+            while (firstChild = ele.firstChild) {
+                node.appendChild(firstChild)
+            }
+            compiler(node, this)
+                // 此时已经 ele 已经没有子元素了
+            ele.appendChild(node)
+
+        }
+
+        function compiler(node, vm) {
+            let childNodes = node.childNodes;
+            [...childNodes].forEach(function(e) {
+                if (e.nodeType === 1) {
+                    compiler(e, vm)
+                } else if (e.nodeType === 3) {
+                    compilertext(vm, e)
+                }
+            });
+        }
+
+        let WATCHER
+        let DEPID = 0
+        let WATCHERID = 0
+
+        function Watcher(cb) {
+            this.id = WATCHERID++
+                this.deps = []
+            this.depsId = new Set()
+            if (typeof cb == 'function') {
+                this._update = cb;
+            }
+            WATCHER = this
+            this._update();
+            WATCHER = this
+                //            this.getter()
+        }
+
+        Watcher.prototype.adddep = function(dep) {
+            if (!this.depsId.has(dep.id)) {
+                this.depsId.add(dep.id)
+                this.deps.push(dep)
+            }
+        }
+
+        function Dep() {
+            this.id = DEPID++
+                this.subs = []
+        }
+
+        Dep.prototype.addsub = function(watcher) {
+            this.subs.push(watcher)
+        }
+
+        Dep.prototype.depend = function(watcher) {
+            this.addsub(watcher)
+            watcher.adddep(this)
+        }
+
+        Dep.prototype.notify = function() {
+            console.log(this.subs);
+            this.subs.forEach(function(v) {
+                v._update();
+            })
+            return
+        }
+
+        function getv(vm, fnContent) {
+            let getv_ = new Function('vm', fnContent)
+            return getv_(vm)
+        }
+
+        function compilertext(vm, e) {
+            if (!e.expr) {
+                e.expr = e.textContent
+            }
+            const rexp = /\{\{((?:.|\r?\n)+?)\}\}/g;
+            e.textContent = e.expr.replace(rexp, function(...args) {
+                let v = getv(vm, `return vm.${args[1]}`)
+                return v
+            })
+        }
+
+        function initstate(vm) {
+            let opts = vm.$options
+            if (opts.data) {
+                initdata(vm)
+            }
+            if (opts.computed) {
+                initcomputed()
+            }
+            if (opts.watch) {
+                initwatch()
+            }
+        }
+
+        function initdata(vm) {
+            let data = vm.$options.data
+            if (typeof data == 'function') {
+                //data里面的this指向vm实例 this.xxx=xx
+                vm._data = data.call(vm)
+            } else {
+                vm._data = data || {}
+            }
+            for (let k in vm._data) {
+                proxy(vm, '_data', k)
+            }
+            observe(vm._data)
+        }
+
+        function proxy(vm, source, k) {
+            Object.defineProperty(vm, k, {
+                set(newv) {
+                    return vm[source][k] = newv
+                },
+                get() {
+                    return vm[source][k]
+                }
+            })
+        }
+
+        function observe(data) {
+            if (typeof data == 'object') {
+                observer(data)
+            } else {
+                return
+            }
+        }
+
+        function observer(data) {
+            let keys = Object.keys(data)
+            if (Array.isArray(data)) {
+                data.__proto__ = arrayMethods
+                observearray(data)
+            }
+            keys.forEach(function(v) {
+                reactive(data, v, data[v]);
+            })
+        }
+
+        function reactive(d, k, v) {
+            observe(v)
+            let dep = new Dep()
+                //Object.defineProperty(倾听的数据，倾听的键，配置{get,set})
+            Object.defineProperty(d, k, {
+                get() {
+                    if (WATCHER) {
+                        dep.depend(WATCHER)
+                    }
+                    return v
+                },
+                set(newv) {
+                    if (newv === v) {
+                        return
+                    }
+                    v = newv
+                    observe(newv)
+                    dep.notify();
+                }
+            })
+
+        }
+
+        function initwatch() {
+
+        }
+
+        function initcomputed() {
+
+        }
+
+        function observearray(args) {
+            args.forEach(function(v) {
+                observe(v)
+            })
+        } //数组拦截
+
+        var oldMethods = Array.prototype
+        var arrayMethods = Object.create(oldMethods)
+        var methods = ['pop', 'push', 'shift', 'unshift', 'sort', 'splice', 'reverse'];
+        methods.forEach(function(method) {
+            arrayMethods[method] = function(...args) {
+                if (args.length > 0) {
+                    observearray(args)
+                }
+                return oldMethods[method].apply(this, args)
+            }
+        })
+
+
+        let app = new Vue({
+            ele: '#app',
+            data() {
+                return {
+                    info: {
+                        name: '张三',
+                        age: 0,
+                        pet: ['dog', 'cat', 'tager']
+                    }
+                }
+            },
+            watch: {
+
+            },
+            computed: {
+
+            }
+        })
+        console.log(app);
+    </script>
 </body>
+
 </html>

@@ -1,21 +1,156 @@
 <!DOCTYPE html>
 <html lang="cn">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>bus,bus</title>
+    <title>Vue,Vue</title>
+</head>
+
+<body>
+    <div id="app">
+        <span>{{info.name}}</span>
+        <span>{{info.age}}</span>
+        <span>{{info.name}}</span>
+        <span>{{info.name}}</span>
+        <span>{{info.name}}</span>
+    </div>
     <script>function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
 
-function Bus(options) {
+function _toConsumableArray(arr) { return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread(); }
+
+function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+
+function _unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return _arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _arrayLikeToArray(o, minLen); }
+
+function _iterableToArray(iter) { if (typeof Symbol !== "undefined" && Symbol.iterator in Object(iter)) return Array.from(iter); }
+
+function _arrayWithoutHoles(arr) { if (Array.isArray(arr)) return _arrayLikeToArray(arr); }
+
+function _arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len = arr.length; for (var i = 0, arr2 = new Array(len); i < len; i++) { arr2[i] = arr[i]; } return arr2; }
+
+function Vue(options) {
   this._init(options);
 
   return;
 }
 
-Bus.prototype._init = function (ops) {
+Vue.prototype._init = function (ops) {
   this.$options = ops;
   initstate(this);
+
+  if (ops.ele) {
+    this.$mount(ops);
+  }
 };
+
+function query(el) {
+  if (typeof el == 'string') {
+    return document.querySelector(el);
+  } else {
+    return {};
+  }
+}
+
+Vue.prototype.$mount = function (ops) {
+  var vm = this;
+  this.$el = query(ops.ele);
+  new Watcher(function () {
+    vm._update();
+  });
+};
+
+Vue.prototype._update = function () {
+  var node = document.createDocumentFragment();
+  var firstChild;
+  var ele = this.$el;
+
+  while (firstChild = ele.firstChild) {
+    node.appendChild(firstChild);
+  }
+
+  compiler(node, this); // 此时已经 ele 已经没有子元素了
+
+  ele.appendChild(node);
+};
+
+function compiler(node, vm) {
+  var childNodes = node.childNodes;
+
+  _toConsumableArray(childNodes).forEach(function (e) {
+    if (e.nodeType === 1) {
+      compiler(e, vm);
+    } else if (e.nodeType === 3) {
+      compilertext(vm, e);
+    }
+  });
+}
+
+var WATCHER;
+var DEPID = 0;
+var WATCHERID = 0;
+
+function Watcher(cb) {
+  this.id = WATCHERID++;
+  this.deps = [];
+  this.depsId = new Set();
+
+  if (typeof cb == 'function') {
+    this._update = cb;
+  }
+
+  WATCHER = this;
+
+  this._update();
+
+  WATCHER = this; //            this.getter()
+}
+
+Watcher.prototype.adddep = function (dep) {
+  if (!this.depsId.has(dep.id)) {
+    this.depsId.add(dep.id);
+    this.deps.push(dep);
+  }
+};
+
+function Dep() {
+  this.id = DEPID++;
+  this.subs = [];
+}
+
+Dep.prototype.addsub = function (watcher) {
+  this.subs.push(watcher);
+};
+
+Dep.prototype.depend = function (watcher) {
+  this.addsub(watcher);
+  watcher.adddep(this);
+};
+
+Dep.prototype.notify = function () {
+  console.log(this.subs);
+  this.subs.forEach(function (v) {
+    v._update();
+  });
+  return;
+};
+
+function getv(vm, fnContent) {
+  var getv_ = new Function('vm', fnContent);
+  return getv_(vm);
+}
+
+function compilertext(vm, e) {
+  if (!e.expr) {
+    e.expr = e.textContent;
+  }
+
+  var rexp = /\{\{((?:.|\r?\n)+?)\}\}/g;
+  e.textContent = e.expr.replace(rexp, function () {
+    var v = getv(vm, "return vm.".concat(arguments.length <= 1 ? undefined : arguments[1]));
+    return v;
+  });
+}
 
 function initstate(vm) {
   var opts = vm.$options;
@@ -83,10 +218,15 @@ function observer(data) {
 }
 
 function reactive(d, k, v) {
-  observe(v); //Object.defineProperty(倾听的数据，倾听的键，配置{get,set})
+  observe(v);
+  var dep = new Dep(); //Object.defineProperty(倾听的数据，倾听的键，配置{get,set})
 
   Object.defineProperty(d, k, {
     get: function get() {
+      if (WATCHER) {
+        dep.depend(WATCHER);
+      }
+
       return v;
     },
     set: function set(newv) {
@@ -94,8 +234,9 @@ function reactive(d, k, v) {
         return;
       }
 
+      v = newv;
       observe(newv);
-      return v = newv;
+      dep.notify();
     }
   });
 }
@@ -127,12 +268,12 @@ methods.forEach(function (method) {
     return oldMethods[method].apply(this, args);
   };
 });
-var app = new Bus({
+var app = new Vue({
   ele: '#app',
   data: function data() {
     return {
       info: {
-        name: '',
+        name: '张三',
         age: 0,
         pet: ['dog', 'cat', 'tager']
       }
@@ -141,10 +282,7 @@ var app = new Bus({
   watch: {},
   computed: {}
 });
-app._data.info.name = '--';
 console.log(app);</script>
-</head>
-<body>
-    <div id="app"></div>
 </body>
+
 </html>
