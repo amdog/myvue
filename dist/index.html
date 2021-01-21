@@ -9,11 +9,12 @@
 
 <body>
     <div id="app">
-        <span>{{info.name}}</span>
-        <span>{{info.age}}</span>
-        <span>{{info.name}}</span>
-        <span>{{info.name}}</span>
-        <span>{{info.name}}</span>
+        <span>姓名：{{info.name}}</span>
+        <span>年龄：{{info.age}}</span>
+        <span>宠物：{{info.pet}}</span>
+        <span>住址：{{info.addr}}</span>
+        <br>
+        <span>妻子：{{wife}}</span>
     </div>
     <script>function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
 
@@ -55,7 +56,7 @@ function query(el) {
 Vue.prototype.$mount = function (ops) {
   var vm = this;
   this.$el = query(ops.ele);
-  new Watcher(function () {
+  new Watcher(this, function () {
     vm._update();
   });
 };
@@ -90,20 +91,70 @@ var WATCHER;
 var DEPID = 0;
 var WATCHERID = 0;
 
-function Watcher(cb) {
+Vue.prototype.$watch = function (key, handler) {
+  new Watcher(this, key, handler, {
+    user: true
+  });
+};
+
+function Watcher(vm, updatefun, cb, ops) {
   this.id = WATCHERID++;
   this.deps = [];
   this.depsId = new Set();
 
-  if (typeof cb == 'function') {
-    this._update = cb;
+  if (typeof updatefun == 'function') {
+    this.run = updatefun;
+
+    this._update = function () {
+      queuewatcher(this);
+    };
+  } else {
+    var old = getv(vm, "return vm.".concat(updatefun));
+
+    this.run = function () {
+      vm._update();
+    };
+
+    this._update = function () {
+      queuewatcher(this);
+
+      if (cb) {
+        var newv = getv(vm, "return vm.".concat(updatefun));
+
+        if (newv !== old) {
+          cb(old, newv);
+        }
+      }
+    };
   }
 
   WATCHER = this;
 
   this._update();
+}
 
-  WATCHER = this; //            this.getter()
+var HAS = {};
+var QUEUE = [];
+
+function flusqueue() {
+  QUEUE.forEach(function (v) {
+    v.run();
+  });
+  HAS = {};
+  QUEUE = [];
+}
+
+function queuewatcher(watcher) {
+  if (!HAS[watcher.id]) {
+    HAS[watcher.id] = true;
+    QUEUE.push(watcher);
+  }
+
+  nexttrik(flusqueue);
+}
+
+function nexttrik(flusqueue) {
+  Promise.resolve().then(flusqueue);
 }
 
 Watcher.prototype.adddep = function (dep) {
@@ -122,13 +173,12 @@ Dep.prototype.addsub = function (watcher) {
   this.subs.push(watcher);
 };
 
-Dep.prototype.depend = function (watcher) {
-  this.addsub(watcher);
-  watcher.adddep(this);
+Dep.prototype.depend = function () {
+  this.addsub(WATCHER);
+  WATCHER.adddep(this);
 };
 
 Dep.prototype.notify = function () {
-  console.log(this.subs);
   this.subs.forEach(function (v) {
     v._update();
   });
@@ -164,9 +214,17 @@ function initstate(vm) {
   }
 
   if (opts.watch) {
-    initwatch();
+    initwatch(vm);
   }
 }
+
+function initwatch(vm) {
+  for (var key in vm.$options.watch) {
+    vm.$watch(key, vm.$options.watch[key]);
+  }
+}
+
+function initcomputed() {}
 
 function initdata(vm) {
   var data = vm.$options.data;
@@ -197,15 +255,27 @@ function proxy(vm, source, k) {
 }
 
 function observe(data) {
-  if (_typeof(data) == 'object') {
-    observer(data);
-  } else {
+  if (_typeof(data) !== 'object' || data == null) {
     return;
   }
+
+  if (data.__ob__) {
+    return data;
+  }
+
+  return new Observer(data);
 }
 
-function observer(data) {
+function Observer(data) {
+  var _this = this;
+
+  this.dep = new Dep();
   var keys = Object.keys(data);
+  Object.defineProperty(data, '__ob__', {
+    get: function get() {
+      return _this;
+    }
+  });
 
   if (Array.isArray(data)) {
     data.__proto__ = arrayMethods;
@@ -217,14 +287,30 @@ function observer(data) {
   });
 }
 
+function dependarray(value) {
+  for (var i = 0; i < value.length; i++) {
+    var item = value[i];
+    item.__ob__ && item.__ob__.dep.depend();
+
+    if (Array.isArray(item)) {
+      dependarray();
+    }
+  }
+}
+
 function reactive(d, k, v) {
-  observe(v);
+  var ob = observe(v);
   var dep = new Dep(); //Object.defineProperty(倾听的数据，倾听的键，配置{get,set})
 
   Object.defineProperty(d, k, {
     get: function get() {
       if (WATCHER) {
-        dep.depend(WATCHER);
+        dep.depend();
+
+        if (ob) {
+          ob.dep.depend();
+          dependarray(v);
+        }
       }
 
       return v;
@@ -240,10 +326,6 @@ function reactive(d, k, v) {
     }
   });
 }
-
-function initwatch() {}
-
-function initcomputed() {}
 
 function observearray(args) {
   args.forEach(function (v) {
@@ -265,7 +347,11 @@ methods.forEach(function (method) {
       observearray(args);
     }
 
-    return oldMethods[method].apply(this, args);
+    var result = oldMethods[method].apply(this, args);
+
+    this.__ob__.dep.notify();
+
+    return result;
   };
 });
 var app = new Vue({
@@ -275,13 +361,23 @@ var app = new Vue({
       info: {
         name: '张三',
         age: 0,
-        pet: ['dog', 'cat', 'tager']
-      }
+        pet: ['dog', 'cat', 'tager'],
+        addr: '云南省xx市xx县'
+      },
+      wife: '李四'
     };
   },
-  watch: {},
+  watch: {
+    wife: function wife(newv, oldv) {
+      console.log(newv, oldv, 'watch...');
+    }
+  },
   computed: {}
 });
+setTimeout(function () {
+  app.info.age = 20;
+  app.wife = '王五';
+}, 2000);
 console.log(app);</script>
 </body>
 

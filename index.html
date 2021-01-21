@@ -9,17 +9,19 @@
 
 <body>
     <div id="app">
-        <span>{{info.name}}</span>
-        <span>{{info.age}}</span>
-        <span>{{info.name}}</span>
-        <span>{{info.name}}</span>
-        <span>{{info.name}}</span>
+        <span>姓名：{{info.name}}</span>
+        <span>年龄：{{info.age}}</span>
+        <span>宠物：{{info.pet}}</span>
+        <span>住址：{{info.addr}}</span>
+        <br>
+        <span>妻子：{{wife}}</span>
     </div>
     <script>
         function Vue(options) {
             this._init(options)
             return
         }
+
         Vue.prototype._init = function(ops) {
             this.$options = ops
             initstate(this)
@@ -39,7 +41,7 @@
         Vue.prototype.$mount = function(ops) {
             let vm = this
             this.$el = query(ops.ele);
-            new Watcher(function() {
+            new Watcher(this, function() {
                 vm._update()
             })
         }
@@ -71,17 +73,63 @@
         let DEPID = 0
         let WATCHERID = 0
 
-        function Watcher(cb) {
+
+        Vue.prototype.$watch = function(key, handler) {
+            new Watcher(this, key, handler, {
+                user: true
+            })
+        }
+
+        function Watcher(vm, updatefun, cb, ops) {
             this.id = WATCHERID++
                 this.deps = []
             this.depsId = new Set()
-            if (typeof cb == 'function') {
-                this._update = cb;
+
+            if (typeof updatefun == 'function') {
+                this.run = updatefun
+                this._update = function() {
+                    queuewatcher(this)
+                }
+            } else {
+                let old = getv(vm, `return vm.${updatefun}`)
+                this.run = function() {
+                    vm._update()
+                }
+                this._update = function() {
+                    queuewatcher(this)
+                    if (cb) {
+                        let newv = getv(vm, `return vm.${updatefun}`)
+                        if (newv !== old) {
+                            cb(old, newv)
+                        }
+                    }
+                }
             }
             WATCHER = this
             this._update();
-            WATCHER = this
-                //            this.getter()
+        }
+
+        let HAS = {}
+        let QUEUE = []
+
+        function flusqueue() {
+            QUEUE.forEach(function(v) {
+                v.run()
+            })
+            HAS = {}
+            QUEUE = []
+        }
+
+        function queuewatcher(watcher) {
+            if (!HAS[watcher.id]) {
+                HAS[watcher.id] = true
+                QUEUE.push(watcher)
+            }
+            nexttrik(flusqueue)
+        }
+
+        function nexttrik(flusqueue) {
+            Promise.resolve().then(flusqueue)
         }
 
         Watcher.prototype.adddep = function(dep) {
@@ -100,13 +148,12 @@
             this.subs.push(watcher)
         }
 
-        Dep.prototype.depend = function(watcher) {
-            this.addsub(watcher)
-            watcher.adddep(this)
+        Dep.prototype.depend = function() {
+            this.addsub(WATCHER)
+            WATCHER.adddep(this)
         }
 
         Dep.prototype.notify = function() {
-            console.log(this.subs);
             this.subs.forEach(function(v) {
                 v._update();
             })
@@ -138,8 +185,18 @@
                 initcomputed()
             }
             if (opts.watch) {
-                initwatch()
+                initwatch(vm)
             }
+        }
+
+        function initwatch(vm) {
+            for (let key in vm.$options.watch) {
+                vm.$watch(key, vm.$options.watch[key])
+            }
+        }
+
+        function initcomputed() {
+
         }
 
         function initdata(vm) {
@@ -156,6 +213,7 @@
             observe(vm._data)
         }
 
+
         function proxy(vm, source, k) {
             Object.defineProperty(vm, k, {
                 set(newv) {
@@ -168,15 +226,25 @@
         }
 
         function observe(data) {
-            if (typeof data == 'object') {
-                observer(data)
-            } else {
+            if (typeof data !== 'object' || data == null) {
                 return
             }
+            if (data.__ob__) {
+                return data
+            }
+            return new Observer(data)
         }
 
-        function observer(data) {
+        function Observer(data) {
+            this.dep = new Dep()
             let keys = Object.keys(data)
+
+            Object.defineProperty(data, '__ob__', {
+                get: () => {
+                    return this
+                }
+            })
+
             if (Array.isArray(data)) {
                 data.__proto__ = arrayMethods
                 observearray(data)
@@ -186,14 +254,28 @@
             })
         }
 
+        function dependarray(value) {
+            for (let i = 0; i < value.length; i++) {
+                let item = value[i];
+                item.__ob__ && item.__ob__.dep.depend()
+                if (Array.isArray(item)) {
+                    dependarray()
+                }
+            }
+        }
+
         function reactive(d, k, v) {
-            observe(v)
+            let ob = observe(v)
             let dep = new Dep()
                 //Object.defineProperty(倾听的数据，倾听的键，配置{get,set})
             Object.defineProperty(d, k, {
                 get() {
                     if (WATCHER) {
-                        dep.depend(WATCHER)
+                        dep.depend()
+                        if (ob) {
+                            ob.dep.depend()
+                            dependarray(v)
+                        }
                     }
                     return v
                 },
@@ -206,14 +288,6 @@
                     dep.notify();
                 }
             })
-
-        }
-
-        function initwatch() {
-
-        }
-
-        function initcomputed() {
 
         }
 
@@ -231,7 +305,9 @@
                 if (args.length > 0) {
                     observearray(args)
                 }
-                return oldMethods[method].apply(this, args)
+                let result = oldMethods[method].apply(this, args)
+                this.__ob__.dep.notify()
+                return result
             }
         })
 
@@ -243,17 +319,25 @@
                     info: {
                         name: '张三',
                         age: 0,
-                        pet: ['dog', 'cat', 'tager']
-                    }
+                        pet: ['dog', 'cat', 'tager'],
+                        addr: '云南省xx市xx县'
+                    },
+                    wife: '李四'
                 }
             },
             watch: {
-
+                wife(newv, oldv) {
+                    console.log(newv, oldv, 'watch...');
+                }
             },
             computed: {
 
             }
         })
+        setTimeout(() => {
+            app.info.age = 20
+            app.wife = '王五'
+        }, 2000);
         console.log(app);
     </script>
 </body>
